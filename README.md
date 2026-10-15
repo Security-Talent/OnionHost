@@ -1,10 +1,16 @@
 # OnionHost
 
-OnionHost turns an Android phone into a private static-file server published as a Tor v3 Onion Service. Import a website, document, or media file, start hosting, and share the generated `.onion` address with visitors using Tor Browser. It also includes anonymous one-to-one chats and named group rooms served directly from the same Onion Service.
-
-[![Download latest APK](https://img.shields.io/badge/Download-Latest%20APK-purple?style=for-the-badge&logo=android)](https://github.com/SecurityTalent/OnionHost/raw/main/releases/OnionHost-latest.apk)
+OnionHost is an Android app that imports files into app-private storage and can publish them through a Tor v3 Onion Service. It also provides host-managed personal chat links and group rooms. The chat is hosted by one user's phone; it is not a peer-to-peer or end-to-end encrypted messenger.
 
 > **Current source version:** 1.1.1 (version code 5) · **Minimum Android:** 8.0 / API 26
+
+## Release and readiness status
+
+This repository snapshot does **not** contain a verified, production-signed APK. A local release build can be generated, but without the maintainer's persistent release keystore it is unsigned and cannot be distributed as a production update. The previously used `releases/OnionHost-latest.apk` download link is not presented here as a current verified release.
+
+Source verification on 2026-10-15: 36 local unit tests passed, debug lint reported 0 errors and 55 warnings, and the minified release variant packaged as `app-release-unsigned.apk`. No Android device or emulator was attached, so Tor bootstrap, actual Onion Service reachability, app-to-app chat, and responsive layouts have not been verified on hardware. These checks do not establish production readiness.
+
+Known release blockers include plaintext chat storage/transport at the application layer (no E2EE), no shipped username directory or complete username-to-chat flow, an unsigned release without the production keystore, outstanding lint/dependency warnings, and missing live device/network testing. See the [spec track index](specs/README.md) and [chat spec](specs/002-anonymous-chat/spec.md) for details.
 
 ## Proof of concept (POC)
 
@@ -12,19 +18,9 @@ The screenshot below shows the complete flow: OnionHost is hosting on the phone,
 
 ![OnionHost POC: Android host and Tor Browser visitor](POC/POC.png)
 
-## Download and install
+## Build and install a development build
 
-**[Download the latest installable APK](https://github.com/SecurityTalent/OnionHost/raw/main/releases/OnionHost-latest.apk)**
-
-The link always points to `releases/OnionHost-latest.apk` on the `main` branch. Replace that one file whenever a new build is published, and the README button will download the new version without changing the link.
-
-1. Download the APK on an Android 8.0+ device.
-2. Open the downloaded file and allow installation from the app you used to download it, if Android asks.
-3. Start OnionHost, import content, and select **Start hosting**.
-4. Wait until the status says that the Onion Service is live.
-5. Share the displayed `http://…onion/` address. Visitors must open it with Tor Browser.
-
-The checked-in latest APK is a debug-signed build for testing. For public production distribution, create a release build signed with your own persistent private keystore; the production-signing section below explains this. Keep the host phone powered, online, and excluded from aggressive battery optimization while it is hosting.
+Build the debug APK from source using the steps below, then install it only for development/testing. To host content, keep the device powered and online and allow OnionHost to run its foreground service. Wait for the UI to report that the Onion Service is live before sharing its address.
 
 ## Hosting a site or file
 
@@ -53,12 +49,12 @@ Chat is served by OnionHost itself. No third-party chat server, phone number, or
 
 ### Personal chat tab
 
-Use **Personal chat** for one-to-one conversations.
+Use **Personal** for a one-to-one room hosted by this device.
 
-1. Select **New personal chat link**.
-2. Copy the icon beside that personal chat.
-3. Share the link only with the intended person.
-4. Select a saved personal chat name to open its messages.
+1. Start hosting from **Home** and wait for Tor publication.
+2. Open **Chats → Personal → New chat**.
+3. Select **Share** beside the saved chat and send the invite to the intended person.
+4. Open the saved chat to view messages and approve incoming join requests.
 
 Personal conversations stay separate from group rooms. While the Personal chat tab is open, room messages cannot be viewed or sent.
 
@@ -66,11 +62,10 @@ Personal conversations stay separate from group rooms. While the Personal chat t
 
 Use **Rooms** for group conversations.
 
-1. Enter a room name, for example `room1`, `room2`, or `friends`.
-2. Press **Create**. The room name immediately appears under **Your rooms**, even before its first message.
-3. Tap a room name to open that room.
-4. Press the copy icon on the right of that room to copy its own unique link.
-5. Anyone who opens the same room link can join that room and chat with the group.
+1. Start hosting from **Home** and wait for Tor publication.
+2. Open **Chats → Rooms**, enter a room name and tap the add/create action.
+3. Tap a room to open it, then select **Share** to send its invite.
+4. Approve visitors from the join-request control before they can send or read chat messages.
 
 Each room has a different URL in this form:
 
@@ -78,7 +73,7 @@ Each room has a different URL in this form:
 http://your-onion-address.onion/chat/room-room1
 ```
 
-Room messages stay in their own room. While the Rooms tab is open, personal messages cannot be viewed or sent.
+Room messages stay in their own room. While the Rooms tab is open, personal messages cannot be viewed or sent. A guest can join in OnionHost using **Join** and pasting the invite; a browser guest needs a Tor-capable browser such as Tor Browser.
 
 ### Sending, attachments, activity, and history
 
@@ -97,16 +92,18 @@ Room messages stay in their own room. While the Rooms tab is open, personal mess
 - A primary archive and local backup archive are written on every chat change. If an interrupted write damages the primary archive, the backup is restored on the next launch.
 - Chats survive hosting restarts, app restarts, and normal device restarts. Clearing Android app data or uninstalling the app removes locally stored chats.
 - Each room retains the latest 200 messages to keep memory use bounded.
-- A private link is an access secret, not end-to-end encryption. Use unpredictable room names and do not publish links you want to keep private.
+- A private link is a locator/access secret, not end-to-end encryption. The host stores message text and attachment data in readable JSON in app-private storage and can read them. Anyone with the link can request access; host approval is the gate, and the current client ID is not a cryptographic identity.
+- Tor protects the network route to an Onion Service, but it does not hide content from the hosting device or guarantee anonymity. Host availability depends on the phone, Tor, network, Android background limits, and battery settings.
+- Username-based discovery is not available in the Chats UI. The repository has signed-record/client groundwork but ships no configured discovery service or complete username-to-chat workflow.
 
 ## Other app functions
 
 | Screen | What it does |
 | --- | --- |
 | **Home** | Starts/stops/restarts hosting, displays the Onion address, copies the site address, and saves the address QR code. |
-| **Chat** | Manages fully separated personal chats and group rooms, their links, messages, attachments, activity indicators, and deletion. |
+| **Chats** | Manages personal rooms and group rooms, invite sharing/joining, host approval, messages, attachments, activity indicators, and deletion. |
 | **Websites** | Shows imported websites and lets you choose the active hosted content. |
-| **Analytics** | Shows local visits, downloads, paths, and daily statistics. No IP addresses or user-agent strings are stored. |
+| **Analytics** | Shows local visit/download request counts, paths, and daily statistics. The app does not persist IP or user-agent fields in visitor-stat rows; requested paths and timestamps are stored locally and may themselves reveal sensitive resource names. |
 | **Logs** | Shows application, HTTP, and Tor status messages to help diagnose startup or publication problems. |
 | **Settings** | Stores app preferences, including hosting-related settings. |
 | **About** | Shows application information. |
@@ -120,6 +117,9 @@ Room messages stay in their own room. While the Rooms tab is open, personal mess
 - The embedded server rate-limits requests per observed address.
 - Tor creates and owns the v3 hidden-service key material; OnionHost does not generate a fake Onion address.
 - An Onion address only becomes shareable after Tor reports that its service descriptor has been published.
+- Chat content is not end-to-end encrypted and is readable by the host. Do not use it for sensitive communications until an audited E2EE protocol, secure key verification, and encrypted storage are implemented and tested.
+- Username registration/discovery is not a deployed decentralized network. Do not infer that a signed username record proves control of an Onion Service.
+- The Android manifest declares `INTERNET`, network-state, foreground-service, notification, boot, and wake-lock permissions. Review the current manifest and release lint output before distribution.
 
 ## Build from source
 
@@ -130,7 +130,19 @@ $env:ANDROID_HOME = "C:\Users\<you>\AppData\Local\Android\Sdk"
 .\gradlew.bat :app:assembleDebug
 ```
 
-The debug APK is created at `app/build/outputs/apk/debug/app-debug.apk`.
+The debug APK is created at `app/build/outputs/apk/debug/app-debug.apk`. The
+local release output is `app/build/outputs/apk/release/app-release-unsigned.apk`
+unless all required persistent signing properties are configured.
+
+Run the local checks with:
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+```
+
+The source snapshot was last checked on 2026-10-15: 36 unit tests passed,
+lint reported 0 errors/55 warnings, and the unsigned release variant packaged.
+No device/emulator was available for runtime Tor or UI checks.
 
 ### Publish the current latest APK
 
@@ -140,7 +152,10 @@ Run this task after building and testing a debug APK:
 .\gradlew.bat :app:publishLatestApk
 ```
 
-It updates `releases/OnionHost-latest.apk`, which is the file used by the README download button. Commit and push that file with the source changes to publish the new downloadable build.
+It copies the debug APK to `releases/OnionHost-latest.apk` for local/manual
+distribution. This is a debug build, not a production release; it does not
+sign the app with a production key or validate readiness. Do not publish it as
+a production update.
 
 ### Production-signed APK
 
@@ -159,7 +174,11 @@ Then run:
 .\gradlew.bat :app:publishProductionApk
 ```
 
-This task uses the release build and publishes the signed result as `releases/OnionHost-latest.apk`. If the signing properties are absent, it deliberately does not publish a release APK.
+When all signing properties are valid, this task builds and copies the signed
+release APK to `releases/OnionHost-latest.apk`. Without them, the task skips;
+`assembleRelease` can still create an unsigned APK. Keep the keystore and
+properties file out of Git. A production update must use the same persistent
+signing key as previous releases.
 
 ## Architecture
 
@@ -184,14 +203,87 @@ graph TD
 | `storage/` and `security/` | Content import, ZIP extraction, MIME checks, path safety, and rate limiting. |
 | `database/` and `analytics/` | Local website configuration, logs, and privacy-preserving statistics. |
 
-## Responsible Use
+## Bug bounty field notes
 
-OnionHost is intended for legitimate privacy-preserving hosting,
-development, testing, research, and communication purposes.
+এই নোটগুলো অনুমতিপ্রাপ্ত bug bounty ও security testing-এর জন্য একটি ব্যবহারিক
+চেকলিস্ট। কোনো সাইট বা সিস্টেম পরীক্ষা শুরুর আগে তার বর্তমান program policy,
+scope, নিষিদ্ধ পরীক্ষা, rate limit, এবং disclosure নির্দেশনা পড়ুন। লিখিত
+অনুমতি ও scope-এ নেই এমন host, account, API, third-party service বা ডেটা পরীক্ষা
+করবেন না। OnionHost দিয়ে host করা কোনো সাইটও স্বয়ংক্রিয়ভাবে পরীক্ষার অনুমতি
+দেয় না।
 
-Users are responsible for everything they publish or share through
-their own Onion Service. The developers and maintainers do not
-endorse or authorize unlawful use of the software.
+### ১. কাজ শুরুর আগে
+
+- Program URL, in-scope asset, out-of-scope asset, অনুমোদিত test account এবং
+  যোগাযোগের পথ নোট করুন। Scope অস্পষ্ট হলে পরীক্ষা না করে program-এর কাছে জেনে
+  নিন।
+- নিজের test account ও synthetic data ব্যবহার করুন। বাস্তব ব্যবহারকারীর
+  account বা ব্যক্তিগত তথ্য খুলে দেখা, সংরক্ষণ করা বা শেয়ার করা থেকে বিরত
+  থাকুন।
+- সীমিত অনুরোধ পাঠান; rate limit, availability impact, social engineering,
+  phishing, malware, password spraying এবং destructive test program স্পষ্টভাবে
+  অনুমোদন না করলে করবেন না।
+- সময়, timezone, target, নিজের account/role, এবং প্রতিটি পরীক্ষার উদ্দেশ্য
+  লিখে রাখুন। Secret, token, cookie বা ব্যক্তিগত তথ্য নোটে রাখবেন না; প্রয়োজন
+  হলে নিরাপদে redact করুন।
+
+### ২. হাতে-কলমে পরীক্ষা
+
+- অ্যাপ বা সাইটের স্বাভাবিক flow বুঝে নিন: login, account settings, object
+  access, upload/download, search, API এবং logout। প্রতিটি ধাপে কোন role কী করতে
+  পারে তা লিখুন।
+- একটি করে পরিবর্তন পরীক্ষা করুন। Access-control ত্রুটিতে শুধু নিজের দুইটি
+  অনুমোদিত test account ও নিজের তৈরি object ব্যবহার করে যাচাই করুন। অন্যের
+  object বা তথ্য দেখা গেলে সঙ্গে সঙ্গে থামুন; কেবল ন্যূনতম প্রমাণ রেখে রিপোর্ট
+  করুন।
+- Input validation, session handling, access control, business logic, file
+  handling এবং security headers-এ বাস্তব প্রভাব খুঁজুন। শুধু scanner alert,
+  version banner বা তাত্ত্বিক সম্ভাবনাকে প্রমাণিত vulnerability বলবেন না।
+- ফলাফল পুনরায় যাচাই করতে সর্বনিম্ন নিরাপদ ধাপ নিন। ডেটা পরিবর্তন, মুছে ফেলা,
+  বড় পরিসরে enumeration, persistence বা service disruption এড়িয়ে চলুন।
+
+### ৩. প্রমাণ ও রিপোর্ট
+
+প্রতিটি finding-এর জন্য লিখুন:
+
+1. **শিরোনাম ও সারাংশ:** কী ত্রুটি, কোন in-scope asset-এ, কার ওপর প্রভাব।
+2. **পরিবেশ:** তারিখ ও timezone, endpoint, প্রাসঙ্গিক role, browser/app version।
+3. **পূর্বশর্ত ও ধাপ:** পরিষ্কার, ধারাবাহিক পুনরুৎপাদন ধাপ; নিজের test account
+   ও synthetic object-এর পরিচয় দিন।
+4. **প্রত্যাশিত বনাম বাস্তব ফল:** ত্রুটিটি কীভাবে যাচাই করেছেন এবং নিরাপত্তা
+   নিয়মটি কী হওয়ার কথা ছিল।
+5. **প্রভাব:** আক্রমণকারীর প্রয়োজনীয় access, আক্রান্ত ব্যবহারকারী/ডেটার ধরন,
+   এবং গোপনীয়তা, অখণ্ডতা বা প্রাপ্যতার নির্দিষ্ট ক্ষতি। অনুমানকে বাস্তব
+   প্রভাব হিসেবে লিখবেন না।
+6. **প্রমাণ:** redact করা request/response, screenshot বা ছোট ভিডিও। Secret,
+   session cookie, token ও ব্যক্তিগত তথ্য ঢেকে দিন। প্রয়োজনের বেশি তথ্য সংগ্রহ
+   করবেন না।
+7. **প্রতিকার-ইঙ্গিত:** সংশ্লিষ্ট trust boundary-তে server-side authorization,
+   validation বা rate limit কোথায় শক্ত করা যায়—সংক্ষেপে উল্লেখ করুন।
+
+Severity program-এর rubric অনুযায়ী নির্ধারণ করুন। CVSS দিলে vector ও ব্যবহৃত
+version দিন, তবে program-এর নিজস্ব severity সিদ্ধান্তকে অগ্রাধিকার দিন। একই
+মূল কারণের একাধিক উদাহরণ থাকলে একটি পরিষ্কার রিপোর্টে সংক্ষেপ করুন; duplicate
+finding এড়াতে program-এর নির্দেশনা দেখুন।
+
+### ৪. রিপোর্টের পর
+
+- Program-এর নির্দিষ্ট reporting channel-এ দ্রুত ও গোপনীয়ভাবে জমা দিন। Public
+  disclosure, social media post, বা তৃতীয় পক্ষের সঙ্গে প্রমাণ শেয়ার করার আগে
+  program-এর disclosure policy ও অনুমোদন অনুসরণ করুন।
+- Program-এর প্রশ্নের উত্তর দিন, নিরাপদে retest করুন, এবং অনুমোদিত কাজ শেষ হলে
+  তৈরি করা test data/account সরিয়ে ফেলুন। নিজের নোট ও প্রমাণও program-এর
+  retention নির্দেশনা অনুযায়ী নিরাপদে মুছুন।
+- টাকা, bounty বা credit নিশ্চিত ধরে নেবেন না; যোগ্যতা ও পুরস্কার program-এর
+  নিয়ম এবং triage-এর ওপর নির্ভর করে।
+
+**থামুন এবং রিপোর্ট করুন:** scope-এর বাইরে asset, বাস্তব ব্যবহারকারীর ডেটা,
+অনিচ্ছাকৃত account access, service degradation, বা ক্ষতির সম্ভাবনা দেখলে সঙ্গে
+সঙ্গে পরীক্ষা বন্ধ করুন। ন্যূনতম তথ্য নোট করে program-এর নির্ধারিত নিরাপদ
+যোগাযোগপথে জানান।
+
+এই নির্দেশনা program-এর policy বা আইনগত পরামর্শের বিকল্প নয়। OnionHost দিয়ে
+যে কনটেন্ট host বা share করা হয় তার দায় ব্যবহারকারীর।
 
 ## License
 
