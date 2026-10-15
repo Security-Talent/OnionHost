@@ -1,5 +1,7 @@
 # OnionHost
 
+[![Download latest version](https://img.shields.io/badge/Download-Latest%20Version-075E54?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Security-Talent/OnionHost/releases/latest)
+
 OnionHost is an Android app that imports files into app-private storage and can publish them through a Tor v3 Onion Service. It also provides host-managed personal chat links and group rooms. The chat is hosted by one user's phone; it is not a peer-to-peer or end-to-end encrypted messenger.
 
 > **Current source version:** 1.1.2 (version code 6) · **Minimum Android:** 8.0 / API 26
