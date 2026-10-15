@@ -3,6 +3,9 @@ package com.onionhost.app.di
 import android.content.Context
 import androidx.room.Room
 import com.onionhost.app.analytics.AnalyticsTracker
+import com.onionhost.app.chat.discovery.TorDiscoveryNodeClient
+import com.onionhost.app.chat.discovery.UsernameDiscoveryRepository
+import com.onionhost.app.chat.TorChatClient
 import com.onionhost.app.database.OnionHostDatabase
 import com.onionhost.app.database.dao.LogDao
 import com.onionhost.app.database.dao.VisitorStatDao
@@ -14,6 +17,7 @@ import com.onionhost.app.repository.WebsiteRepository
 import com.onionhost.app.repository.WebsiteRepositoryImpl
 import com.onionhost.app.storage.StorageManager
 import com.onionhost.app.tor.TorManager
+import com.onionhost.app.tor.TorOnionSocketConnector
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -55,6 +59,19 @@ object AppModule {
     fun provideTorManager(@ApplicationContext context: Context): TorManager {
         return TorManager(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideOnionSocketConnector(): TorOnionSocketConnector = TorOnionSocketConnector()
+
+    @Provides
+    @Singleton
+    fun provideTorChatClient(connector: TorOnionSocketConnector): TorChatClient = TorChatClient(connector)
+
+    @Provides
+    @Singleton
+    fun provideUsernameDiscoveryRepository(connector: TorOnionSocketConnector): UsernameDiscoveryRepository =
+        UsernameDiscoveryRepository(TorDiscoveryNodeClient(connector))
 
     @Provides
     @Singleton

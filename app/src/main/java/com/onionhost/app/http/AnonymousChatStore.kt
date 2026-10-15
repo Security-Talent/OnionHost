@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.map
 object AnonymousChatStore {
     data class Attachment(val dataUrl: String, val name: String, val mimeType: String)
     data class Message(val id: Long, val text: String, val sentAt: Long, val ownerId: String?, val attachment: Attachment? = null, val sender: String = "Anonymous")
+    data class JoinRequest(val room: String, val clientId: String, val requestedAt: Long, val displayName: String)
+    data class ActiveChatClient(val room: String, val clientId: String, val displayName: String, val lastSeen: Long, val isActive: Boolean)
 
     private val rooms = ConcurrentHashMap<String, CopyOnWriteArrayList<Message>>()
     // Clients use the last seen ID as a cursor. IDs must therefore be ordered;
@@ -23,6 +25,11 @@ object AnonymousChatStore {
     private val changes = MutableStateFlow(0L)
     private val presenceChanges = MutableStateFlow(0L)
     private val activeClients = ConcurrentHashMap<String, Long>()
+    private val historyRevisions = ConcurrentHashMap<String, Long>()
+    private val pendingJoins = ConcurrentHashMap<String, JoinRequest>()
+    private val approvedClients = ConcurrentHashMap.newKeySet<String>()
+    private val deniedClients = ConcurrentHashMap.newKeySet<String>()
+    private val joinRequests = MutableStateFlow<List<JoinRequest>>(emptyList())
     private var storageFile: File? = null
 
     @Synchronized
@@ -39,6 +46,18 @@ object AnonymousChatStore {
                 rooms.clear()
                 val root = JSONObject(file.readText())
                 val savedRooms = root.optJSONObject("rooms") ?: continue
+                historyRevisions.clear()
+                root.optJSONObject("historyRevisions")?.let { saved ->
+                    saved.keys().forEach { room -> historyRevisions[room] = saved.optLong(room, 0L) }
+                }
+                approvedClients.clear()
+                deniedClients.clear()
+                root.optJSONArray("approvedClients")?.let { entries ->
+                    for (index in 0 until entries.length()) entries.optString(index).takeIf(String::isNotBlank)?.let(approvedClients::add)
+                }
+                root.optJSONArray("deniedClients")?.let { entries ->
+                    for (index in 0 until entries.length()) entries.optString(index).takeIf(String::isNotBlank)?.let(deniedClients::add)
+                }
             var largestId = 0L
             savedRooms.keys().forEach { room ->
                 val savedMessages = savedRooms.optJSONArray(room) ?: return@forEach
@@ -92,6 +111,17 @@ object AnonymousChatStore {
 
     fun messages(room: String): List<Message> = rooms[room].orEmpty().sortedBy { it.sentAt }
 
+    fun historyRevision(room: String): Long = historyRevisions[room] ?: 0L
+
+    @Synchronized
+    fun deleteRoomHistory(room: String): Long {
+        rooms.getOrPut(room) { CopyOnWriteArrayList() }.clear()
+        val revision = historyRevisions.merge(room, 1L, Long::plus) ?: 1L
+        persist()
+        changes.value += 1
+        return revision
+    }
+
     fun roomNames(): List<String> = rooms.keys().toList().sorted()
 
     fun messagesFlow(room: String): Flow<List<Message>> = changes.map { messages(room) }
@@ -103,10 +133,97 @@ object AnonymousChatStore {
         presenceChanges.value += 1
     }
 
+    private fun joinKey(room: String, clientId: String) = "$room:$clientId"
+
+    @Synchronized
+    fun requestJoin(room: String, clientId: String): String {
+        if (clientId.length !in 8..80 || !clientId.matches(Regex("[A-Za-z0-9_-]+")) || room.isBlank()) return "invalid"
+        val key = joinKey(room, clientId)
+        return when {
+            approvedClients.contains(key) -> "approved"
+            deniedClients.contains(key) -> "cancelled"
+            else -> {
+                if (pendingJoins.values.count { it.room == room } >= MAX_PENDING_JOINS_PER_ROOM) return "busy"
+                pendingJoins.putIfAbsent(key, JoinRequest(room, clientId, System.currentTimeMillis(), anonymousName(clientId)))
+                publishJoinRequests()
+                "pending"
+            }
+        }
+    }
+
+    fun joinStatus(room: String, clientId: String): String {
+        val key = joinKey(room, clientId)
+        return when {
+            approvedClients.contains(key) -> "approved"
+            deniedClients.contains(key) -> "cancelled"
+            pendingJoins.containsKey(key) -> "pending"
+            else -> "not_requested"
+        }
+    }
+
+    @Synchronized
+    fun approveJoin(room: String, clientId: String): Boolean {
+        val key = joinKey(room, clientId)
+        if (pendingJoins.remove(key) == null) return false
+        deniedClients.remove(key)
+        approvedClients.add(key)
+        persist()
+        publishJoinRequests()
+        presenceChanges.value += 1
+        return true
+    }
+
+    @Synchronized
+    fun cancelJoin(room: String, clientId: String): Boolean {
+        val key = joinKey(room, clientId)
+        if (pendingJoins.remove(key) == null) return false
+        approvedClients.remove(key)
+        deniedClients.add(key)
+        persist()
+        publishJoinRequests()
+        return true
+    }
+
+    fun isApproved(room: String, clientId: String): Boolean = joinKey(room, clientId) in approvedClients
+
+    fun joinRequestsFlow(): Flow<List<JoinRequest>> = joinRequests
+
+    private fun publishJoinRequests() {
+        joinRequests.value = pendingJoins.values.sortedByDescending { it.requestedAt }
+    }
+
     fun activeClientCount(room: String): Int {
         val cutoff = System.currentTimeMillis() - ACTIVE_CLIENT_WINDOW_MS
         activeClients.entries.removeIf { it.value < cutoff }
         return activeClients.entries.count { it.key.startsWith("$room:") }
+    }
+
+    fun participants(room: String): List<ActiveChatClient> {
+        val cutoff = System.currentTimeMillis() - ACTIVE_CLIENT_WINDOW_MS
+        activeClients.entries.removeIf { it.value < cutoff }
+        val prefix = "$room:"
+        val ids = approvedClients.asSequence().filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }.toMutableSet()
+        activeClients.keys.filter { it.startsWith(prefix) }.mapTo(ids) { it.removePrefix(prefix) }
+        return ids.map { clientId ->
+            val lastSeen = activeClients[joinKey(room, clientId)] ?: 0L
+            ActiveChatClient(room, clientId, anonymousName(clientId), lastSeen, lastSeen >= cutoff)
+        }.sortedWith(compareByDescending<ActiveChatClient> { it.isActive }.thenByDescending { it.lastSeen })
+    }
+
+    fun activeClientsFlow(room: String): Flow<List<ActiveChatClient>> = presenceChanges.map { participants(room) }
+
+    @Synchronized
+    fun blockClient(room: String, clientId: String): Boolean {
+        if (clientId.length !in 8..80) return false
+        val key = joinKey(room, clientId)
+        pendingJoins.remove(key)
+        approvedClients.remove(key)
+        deniedClients.add(key)
+        activeClients.remove(key)
+        persist()
+        publishJoinRequests()
+        presenceChanges.value += 1
+        return true
     }
 
     fun deleteByOwner(room: String, id: Long, ownerId: String): Boolean =
@@ -145,7 +262,10 @@ object AnonymousChatStore {
             }
             val temporary = File(file.parentFile, "${file.name}.tmp")
             val backup = File(file.parentFile, "${file.name}.bak")
-            val payload = JSONObject().put("rooms", savedRooms).toString()
+            val approved = JSONArray().apply { approvedClients.forEach(::put) }
+            val denied = JSONArray().apply { deniedClients.forEach(::put) }
+            val revisions = JSONObject().apply { historyRevisions.forEach { (room, revision) -> put(room, revision) } }
+            val payload = JSONObject().put("rooms", savedRooms).put("approvedClients", approved).put("deniedClients", denied).put("historyRevisions", revisions).toString()
             temporary.writeText(payload)
             // Write the backup first; if the app is stopped at any point there is
             // always a complete JSON archive available for the next launch.
@@ -157,5 +277,6 @@ object AnonymousChatStore {
     const val MAX_MESSAGE_LENGTH = 1_000
     const val MAX_ATTACHMENT_CHARS = 7_000_000
     private const val MAX_MESSAGES_PER_ROOM = 200
+    private const val MAX_PENDING_JOINS_PER_ROOM = 200
     private const val ACTIVE_CLIENT_WINDOW_MS = 15_000L
 }

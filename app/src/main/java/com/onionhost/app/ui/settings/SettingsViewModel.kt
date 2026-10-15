@@ -31,12 +31,14 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun updateDefaultPort(port: Int) {
+        if (port !in 1024..65535) return
         viewModelScope.launch {
             settingsRepository.setDefaultPort(port)
         }
     }
 
     fun updateRateLimit(limit: Int) {
+        if (limit !in 1..10_000) return
         viewModelScope.launch {
             settingsRepository.setRateLimit(limit)
         }

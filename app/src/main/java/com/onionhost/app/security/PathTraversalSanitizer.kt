@@ -12,19 +12,26 @@ object PathTraversalSanitizer {
      */
     fun getSafeFile(rootDir: File, uriPath: String): File? {
         val decodedPath = try {
-            URLDecoder.decode(uriPath, "UTF-8")
+            // URLDecoder treats '+' as a form-encoded space, but '+' is a valid
+            // literal character in a URL path. Preserve it while decoding %xx.
+            URLDecoder.decode(uriPath.replace("+", "%2B"), "UTF-8")
         } catch (e: Exception) {
             return null
         }
 
-        // Prevent null byte injections and double-dot manipulation
-        if (decodedPath.contains("\u0000")) return null
+        // Refuse ambiguous separators and null-byte injection before canonicalizing.
+        if (decodedPath.contains("\u0000") || decodedPath.contains('\\')) return null
 
         val canonicalRootDir = rootDir.canonicalFile
-        val targetFile = File(canonicalRootDir, decodedPath).canonicalFile
+        // HTTP paths are absolute by syntax ("/index.html"), while File(parent,
+        // absoluteChild) can discard the parent. Convert to a root-relative path.
+        val relativePath = decodedPath.trimStart('/')
+        val targetFile = File(canonicalRootDir, relativePath).canonicalFile
 
-        // Verify target file stays strictly inside the canonical root directory tree
-        if (!targetFile.path.startsWith(canonicalRootDir.path)) {
+        // Path component boundary matters: "/root-escape" must not pass for
+        // a root named "/root". Canonicalization also resolves symlinks.
+        val rootPath = canonicalRootDir.path
+        if (targetFile.path != rootPath && !targetFile.path.startsWith(rootPath + File.separator)) {
             return null
         }
 

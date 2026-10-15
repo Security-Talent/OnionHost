@@ -41,14 +41,12 @@ fun HomeScreen(
     val activeWebsite by viewModel.activeWebsite.collectAsState()
     val torStatus by viewModel.torStatus.collectAsState()
     val metrics by viewModel.systemMetrics.collectAsState()
+    var pendingFileType by rememberSaveable { mutableStateOf(WebsiteType.SINGLE_FILE) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            val type = if (it.toString().endsWith(".zip")) WebsiteType.ZIP else WebsiteType.SINGLE_FILE
-            viewModel.importAndHost(context, it, type)
-        }
+        uri?.let { viewModel.importAndHost(context, it, pendingFileType) }
     }
 
     val folderPickerLauncher = rememberLauncherForActivityResult(
@@ -112,7 +110,7 @@ fun HomeScreen(
                 }
             }
             IconButton(
-                enabled = activeWebsite != null,
+                enabled = activeWebsite != null && torStatus.isHosting,
                 onClick = {
                     viewModel.restartHosting(context)
                     Toast.makeText(context, "Restarting Onion server…", Toast.LENGTH_SHORT).show()
@@ -159,8 +157,8 @@ fun HomeScreen(
 
                 Text(
                     text = when (torStatus.state) {
-                        TorState.RUNNING -> "Hosting Live on Tor"
-                        TorState.BOOTSTRAPPING -> "Bootstrapping Tor (${torStatus.bootstrapProgress}%)"
+                        TorState.RUNNING -> if (torStatus.isHosting) "Hosting Live on Tor" else "Tor Client Connected"
+                        TorState.BOOTSTRAPPING -> if (torStatus.isHosting) "Bootstrapping Tor (${torStatus.bootstrapProgress}%)" else "Connecting to Tor (${torStatus.bootstrapProgress}%)"
                         TorState.STARTING -> "Starting Engine..."
                         TorState.ERROR -> "Tor Error"
                         TorState.STOPPED -> "Hosting Inactive"
@@ -182,7 +180,7 @@ fun HomeScreen(
                 if (torStatus.state == TorState.ERROR && !torStatus.errorMessage.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = torStatus.errorMessage ?: "",
+                        text = "${torStatus.errorMessage}\n\nCheck your internet connection, turn off battery restriction for OnionHost, then retry. Hosting also needs the app to remain running while Tor publishes the service.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color(0xFFFCA5A5)
                     )
@@ -191,7 +189,7 @@ fun HomeScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // One Button Host Control
-                if (torStatus.state == TorState.RUNNING || torStatus.state == TorState.BOOTSTRAPPING) {
+                if (torStatus.isHosting && (torStatus.state == TorState.RUNNING || torStatus.state == TorState.BOOTSTRAPPING)) {
                     Button(
                         onClick = { viewModel.stopHosting(context) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
@@ -201,18 +199,36 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Stop Hosting")
                     }
+                } else if (!torStatus.isHosting && (torStatus.state == TorState.RUNNING || torStatus.state == TorState.BOOTSTRAPPING || torStatus.state == TorState.STARTING)) {
+                    Button(
+                        onClick = viewModel::stopTorClient,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Disconnect Tor Client")
+                    }
                 } else {
                     Button(
                         onClick = {
-                            activeWebsite?.let { viewModel.startHosting(context, it.id) }
-                                ?: folderPickerLauncher.launch(null)
+                            if (torStatus.state == TorState.ERROR && !torStatus.isHosting) {
+                                viewModel.retryTorClient()
+                            } else {
+                                activeWebsite?.let { viewModel.startHosting(context, it.id) }
+                                    ?: folderPickerLauncher.launch(null)
+                            }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (torStatus.state == TorState.ERROR) "Retry Hosting" else "Start Hosting")
+                        Text(when {
+                            torStatus.state == TorState.ERROR && !torStatus.isHosting -> "Retry Tor Connection"
+                            torStatus.state == TorState.ERROR -> "Retry Hosting"
+                            else -> "Start Hosting"
+                        })
                     }
                 }
             }
@@ -260,7 +276,9 @@ fun HomeScreen(
                         }
 
                         // QR Code display
-                        "http://${website.onionAddress}".generateQrCodeBitmap()?.let { qrBitmap ->
+                        remember(website.onionAddress) {
+                            "http://${website.onionAddress}".generateQrCodeBitmap()
+                        }?.let { qrBitmap ->
                             Spacer(modifier = Modifier.height(16.dp))
                             Text("Website Server QR Code", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                             Box(
@@ -317,13 +335,19 @@ fun HomeScreen(
                     label = "Choose ZIP File",
                     description = "Extract and host a ZIP archive",
                     icon = Icons.Default.FolderZip,
-                    onClick = { filePickerLauncher.launch("application/zip") }
+                    onClick = {
+                        pendingFileType = WebsiteType.ZIP
+                        filePickerLauncher.launch("application/zip")
+                    }
                 )
                 ImportContentButton(
                     label = "Choose Single File",
                     description = "Host an HTML file, document, or media file",
                     icon = Icons.Default.InsertDriveFile,
-                    onClick = { filePickerLauncher.launch("*/*") }
+                    onClick = {
+                        pendingFileType = WebsiteType.SINGLE_FILE
+                        filePickerLauncher.launch("*/*")
+                    }
                 )
             }
         }

@@ -19,6 +19,7 @@ import com.onionhost.app.database.entity.LogEntity
 import com.onionhost.app.database.entity.LogLevel
 import com.onionhost.app.database.entity.WebsiteEntity
 import com.onionhost.app.http.HttpServerEngine
+import com.onionhost.app.repository.SettingsRepository
 import com.onionhost.app.security.RateLimiter
 import com.onionhost.app.storage.StorageManager
 import com.onionhost.app.tor.TorManager
@@ -26,6 +27,7 @@ import com.onionhost.app.tor.TorState
 import com.onionhost.app.ui.main.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import java.io.File
 import javax.inject.Inject
 
@@ -37,10 +39,13 @@ class OnionHostingService : Service() {
     @Inject lateinit var logDao: LogDao
     @Inject lateinit var analyticsTracker: AnalyticsTracker
     @Inject lateinit var storageManager: StorageManager
+    @Inject lateinit var settingsRepository: SettingsRepository
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var httpServer: HttpServerEngine? = null
     private var activeWebsite: WebsiteEntity? = null
+    private var hostingJob: Job? = null
+    private var requestedWebsiteId: String? = null
 
     companion object {
         const val CHANNEL_ID = "onion_host_service_channel"
@@ -100,10 +105,18 @@ class OnionHostingService : Service() {
     }
 
     private fun startHosting(websiteId: String?) {
+        if (hostingJob?.isActive == true) {
+            if ((requestedWebsiteId == websiteId || websiteId == null) && torManager.torStatus.value.state != TorState.ERROR) return
+            val retryId = websiteId ?: requestedWebsiteId
+            if (retryId == null) return
+            restartHosting(retryId)
+            return
+        }
+        requestedWebsiteId = websiteId
         val notification = createNotification("Initializing Tor Onion Service...")
         startForeground(NOTIFICATION_ID, notification)
 
-        serviceScope.launch {
+        hostingJob = serviceScope.launch {
             try {
                 val website = if (websiteId != null) {
                     websiteDao.getWebsiteById(websiteId)
@@ -121,6 +134,7 @@ class OnionHostingService : Service() {
                 websiteDao.setActiveWebsite(website.id)
 
                 val webDir = storageManager.getWebsiteDirectory(website.id)
+                val configuredRateLimit = settingsRepository.rateLimitPerMin.first().coerceIn(1, 10_000)
                 logDao.insertLog(LogEntity(level = LogLevel.INFO, tag = "HTTP", message = "Starting HTTP Server on port ${website.port}..."))
 
                 // Start Embedded HTTP Server
@@ -128,7 +142,7 @@ class OnionHostingService : Service() {
                 httpServer = HttpServerEngine(
                     port = website.port,
                     webRootDir = webDir,
-                    rateLimiter = RateLimiter(),
+                    rateLimiter = RateLimiter(maxRequestsPerMinute = configuredRateLimit),
                     requiresAuth = website.requiresAuth,
                     authUsername = website.authUsername,
                     authPasswordHash = website.authPasswordHash,
@@ -183,6 +197,9 @@ class OnionHostingService : Service() {
     }
 
     private fun stopHosting() {
+        hostingJob?.cancel()
+        hostingJob = null
+        requestedWebsiteId = null
         serviceScope.launch {
             httpServer?.stop()
             httpServer = null
@@ -196,6 +213,9 @@ class OnionHostingService : Service() {
 
     private fun restartHosting(websiteId: String?) {
         if (websiteId == null) return
+        hostingJob?.cancel()
+        hostingJob = null
+        requestedWebsiteId = null
         serviceScope.launch {
             httpServer?.stop()
             httpServer = null
@@ -252,6 +272,7 @@ class OnionHostingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        hostingJob?.cancel()
         serviceScope.cancel()
         httpServer?.stop()
         torManager.stopTor()

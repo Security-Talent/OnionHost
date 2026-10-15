@@ -3,15 +3,17 @@ package com.onionhost.app.analytics
 import com.onionhost.app.database.dao.VisitorStatDao
 import com.onionhost.app.database.dao.WebsiteDao
 import com.onionhost.app.database.entity.VisitorStatEntity
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class AnalyticsTracker(
     private val visitorStatDao: VisitorStatDao,
     private val websiteDao: WebsiteDao
 ) {
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.US)
+        .withZone(ZoneId.systemDefault())
 
     suspend fun recordRequest(
         websiteId: String,
@@ -20,13 +22,14 @@ class AnalyticsTracker(
         bytesTransferred: Long,
         isDownload: Boolean
     ) {
-        val todayStr = dateFormat.format(Date())
+        val now = System.currentTimeMillis()
+        val todayStr = dateFormatter.format(Instant.ofEpochMilli(now))
         val stat = VisitorStatEntity(
             websiteId = websiteId,
             requestedPath = path,
             statusCode = statusCode,
             bytesTransferred = bytesTransferred,
-            timestamp = System.currentTimeMillis(),
+            timestamp = now,
             dateString = todayStr,
             isDownload = isDownload
         )

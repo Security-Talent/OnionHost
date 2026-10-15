@@ -24,6 +24,37 @@ class PathTraversalSanitizerTest {
     }
 
     @Test
+    fun testLeadingHttpSlashResolvesInsideRoot() {
+        val rootDir = tempFolder.newFolder("slash-root")
+        val sample = File(rootDir, "index.html").apply { writeText("ok") }
+
+        val resolved = PathTraversalSanitizer.getSafeFile(rootDir, "/index.html")
+
+        assertEquals(sample.canonicalPath, resolved?.canonicalPath)
+    }
+
+    @Test
+    fun testSiblingWithRootNamePrefixIsNotTreatedAsContained() {
+        val rootDir = tempFolder.newFolder("webroot")
+        val sibling = File(tempFolder.root, "webroot-secret").apply { mkdirs() }
+        File(sibling, "secret.txt").writeText("secret")
+
+        val resolved = PathTraversalSanitizer.getSafeFile(rootDir, "../webroot-secret/secret.txt")
+
+        assertNull("A sibling path sharing the root prefix must be rejected", resolved)
+    }
+
+    @Test
+    fun testPlusIsPreservedInUrlPath() {
+        val rootDir = tempFolder.newFolder("plus-root")
+        val sample = File(rootDir, "a+b.txt").apply { writeText("ok") }
+
+        val resolved = PathTraversalSanitizer.getSafeFile(rootDir, "/a+b.txt")
+
+        assertEquals(sample.canonicalPath, resolved?.canonicalPath)
+    }
+
+    @Test
     fun testDirectoryEscapeAttemptReturnsNull() {
         val rootDir = tempFolder.newFolder("webroot")
         val secretsFile = tempFolder.newFile("passwords.txt").apply { writeText("secret") }
