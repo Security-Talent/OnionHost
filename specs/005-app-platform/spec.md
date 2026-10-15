@@ -2,6 +2,9 @@
 
 **Status:** Source reviewed; current-state reference
 
+Current source version: `1.1.2` (`versionCode` 6), Android `minSdk` 26 and
+`targetSdk` 34.
+
 ## Requirements
 
 - **FR-001:** The app launches into a four-item bottom-navigation shell:

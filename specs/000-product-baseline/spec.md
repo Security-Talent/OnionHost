@@ -11,6 +11,7 @@ Tor v3 Onion Service. The app also hosts anonymous one-to-one and group chats.
 ## Platform and distribution
 
 - Android `minSdk` 26, `targetSdk` 34, compile SDK 34; Java/Kotlin target 17.
+- Current app version: `1.1.2` (`versionCode` 6).
 - Jetpack Compose UI with Navigation Compose, Hilt dependency injection, Room
   persistence, Preferences DataStore, and Kotlin coroutines/flows.
 - Bundled native Tor binaries target `armeabi-v7a`, `arm64-v8a`, `x86`, and

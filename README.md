@@ -2,15 +2,7 @@
 
 OnionHost is an Android app that imports files into app-private storage and can publish them through a Tor v3 Onion Service. It also provides host-managed personal chat links and group rooms. The chat is hosted by one user's phone; it is not a peer-to-peer or end-to-end encrypted messenger.
 
-> **Current source version:** 1.1.1 (version code 5) · **Minimum Android:** 8.0 / API 26
-
-## Release and readiness status
-
-This repository snapshot does **not** contain a verified, production-signed APK. A local release build can be generated, but without the maintainer's persistent release keystore it is unsigned and cannot be distributed as a production update. The previously used `releases/OnionHost-latest.apk` download link is not presented here as a current verified release.
-
-Source verification on 2026-10-15: 36 local unit tests passed, debug lint reported 0 errors and 55 warnings, and the minified release variant packaged as `app-release-unsigned.apk`. No Android device or emulator was attached, so Tor bootstrap, actual Onion Service reachability, app-to-app chat, and responsive layouts have not been verified on hardware. These checks do not establish production readiness.
-
-Known release blockers include plaintext chat storage/transport at the application layer (no E2EE), no shipped username directory or complete username-to-chat flow, an unsigned release without the production keystore, outstanding lint/dependency warnings, and missing live device/network testing. See the [spec track index](specs/README.md) and [chat spec](specs/002-anonymous-chat/spec.md) for details.
+> **Current source version:** 1.1.2 (version code 6) · **Minimum Android:** 8.0 / API 26
 
 ## Proof of concept (POC)
 
@@ -202,88 +194,6 @@ graph TD
 | `tor/` | Tor process, hidden-service configuration, publication status, and Onion hostname handling. |
 | `storage/` and `security/` | Content import, ZIP extraction, MIME checks, path safety, and rate limiting. |
 | `database/` and `analytics/` | Local website configuration, logs, and privacy-preserving statistics. |
-
-## Bug bounty field notes
-
-এই নোটগুলো অনুমতিপ্রাপ্ত bug bounty ও security testing-এর জন্য একটি ব্যবহারিক
-চেকলিস্ট। কোনো সাইট বা সিস্টেম পরীক্ষা শুরুর আগে তার বর্তমান program policy,
-scope, নিষিদ্ধ পরীক্ষা, rate limit, এবং disclosure নির্দেশনা পড়ুন। লিখিত
-অনুমতি ও scope-এ নেই এমন host, account, API, third-party service বা ডেটা পরীক্ষা
-করবেন না। OnionHost দিয়ে host করা কোনো সাইটও স্বয়ংক্রিয়ভাবে পরীক্ষার অনুমতি
-দেয় না।
-
-### ১. কাজ শুরুর আগে
-
-- Program URL, in-scope asset, out-of-scope asset, অনুমোদিত test account এবং
-  যোগাযোগের পথ নোট করুন। Scope অস্পষ্ট হলে পরীক্ষা না করে program-এর কাছে জেনে
-  নিন।
-- নিজের test account ও synthetic data ব্যবহার করুন। বাস্তব ব্যবহারকারীর
-  account বা ব্যক্তিগত তথ্য খুলে দেখা, সংরক্ষণ করা বা শেয়ার করা থেকে বিরত
-  থাকুন।
-- সীমিত অনুরোধ পাঠান; rate limit, availability impact, social engineering,
-  phishing, malware, password spraying এবং destructive test program স্পষ্টভাবে
-  অনুমোদন না করলে করবেন না।
-- সময়, timezone, target, নিজের account/role, এবং প্রতিটি পরীক্ষার উদ্দেশ্য
-  লিখে রাখুন। Secret, token, cookie বা ব্যক্তিগত তথ্য নোটে রাখবেন না; প্রয়োজন
-  হলে নিরাপদে redact করুন।
-
-### ২. হাতে-কলমে পরীক্ষা
-
-- অ্যাপ বা সাইটের স্বাভাবিক flow বুঝে নিন: login, account settings, object
-  access, upload/download, search, API এবং logout। প্রতিটি ধাপে কোন role কী করতে
-  পারে তা লিখুন।
-- একটি করে পরিবর্তন পরীক্ষা করুন। Access-control ত্রুটিতে শুধু নিজের দুইটি
-  অনুমোদিত test account ও নিজের তৈরি object ব্যবহার করে যাচাই করুন। অন্যের
-  object বা তথ্য দেখা গেলে সঙ্গে সঙ্গে থামুন; কেবল ন্যূনতম প্রমাণ রেখে রিপোর্ট
-  করুন।
-- Input validation, session handling, access control, business logic, file
-  handling এবং security headers-এ বাস্তব প্রভাব খুঁজুন। শুধু scanner alert,
-  version banner বা তাত্ত্বিক সম্ভাবনাকে প্রমাণিত vulnerability বলবেন না।
-- ফলাফল পুনরায় যাচাই করতে সর্বনিম্ন নিরাপদ ধাপ নিন। ডেটা পরিবর্তন, মুছে ফেলা,
-  বড় পরিসরে enumeration, persistence বা service disruption এড়িয়ে চলুন।
-
-### ৩. প্রমাণ ও রিপোর্ট
-
-প্রতিটি finding-এর জন্য লিখুন:
-
-1. **শিরোনাম ও সারাংশ:** কী ত্রুটি, কোন in-scope asset-এ, কার ওপর প্রভাব।
-2. **পরিবেশ:** তারিখ ও timezone, endpoint, প্রাসঙ্গিক role, browser/app version।
-3. **পূর্বশর্ত ও ধাপ:** পরিষ্কার, ধারাবাহিক পুনরুৎপাদন ধাপ; নিজের test account
-   ও synthetic object-এর পরিচয় দিন।
-4. **প্রত্যাশিত বনাম বাস্তব ফল:** ত্রুটিটি কীভাবে যাচাই করেছেন এবং নিরাপত্তা
-   নিয়মটি কী হওয়ার কথা ছিল।
-5. **প্রভাব:** আক্রমণকারীর প্রয়োজনীয় access, আক্রান্ত ব্যবহারকারী/ডেটার ধরন,
-   এবং গোপনীয়তা, অখণ্ডতা বা প্রাপ্যতার নির্দিষ্ট ক্ষতি। অনুমানকে বাস্তব
-   প্রভাব হিসেবে লিখবেন না।
-6. **প্রমাণ:** redact করা request/response, screenshot বা ছোট ভিডিও। Secret,
-   session cookie, token ও ব্যক্তিগত তথ্য ঢেকে দিন। প্রয়োজনের বেশি তথ্য সংগ্রহ
-   করবেন না।
-7. **প্রতিকার-ইঙ্গিত:** সংশ্লিষ্ট trust boundary-তে server-side authorization,
-   validation বা rate limit কোথায় শক্ত করা যায়—সংক্ষেপে উল্লেখ করুন।
-
-Severity program-এর rubric অনুযায়ী নির্ধারণ করুন। CVSS দিলে vector ও ব্যবহৃত
-version দিন, তবে program-এর নিজস্ব severity সিদ্ধান্তকে অগ্রাধিকার দিন। একই
-মূল কারণের একাধিক উদাহরণ থাকলে একটি পরিষ্কার রিপোর্টে সংক্ষেপ করুন; duplicate
-finding এড়াতে program-এর নির্দেশনা দেখুন।
-
-### ৪. রিপোর্টের পর
-
-- Program-এর নির্দিষ্ট reporting channel-এ দ্রুত ও গোপনীয়ভাবে জমা দিন। Public
-  disclosure, social media post, বা তৃতীয় পক্ষের সঙ্গে প্রমাণ শেয়ার করার আগে
-  program-এর disclosure policy ও অনুমোদন অনুসরণ করুন।
-- Program-এর প্রশ্নের উত্তর দিন, নিরাপদে retest করুন, এবং অনুমোদিত কাজ শেষ হলে
-  তৈরি করা test data/account সরিয়ে ফেলুন। নিজের নোট ও প্রমাণও program-এর
-  retention নির্দেশনা অনুযায়ী নিরাপদে মুছুন।
-- টাকা, bounty বা credit নিশ্চিত ধরে নেবেন না; যোগ্যতা ও পুরস্কার program-এর
-  নিয়ম এবং triage-এর ওপর নির্ভর করে।
-
-**থামুন এবং রিপোর্ট করুন:** scope-এর বাইরে asset, বাস্তব ব্যবহারকারীর ডেটা,
-অনিচ্ছাকৃত account access, service degradation, বা ক্ষতির সম্ভাবনা দেখলে সঙ্গে
-সঙ্গে পরীক্ষা বন্ধ করুন। ন্যূনতম তথ্য নোট করে program-এর নির্ধারিত নিরাপদ
-যোগাযোগপথে জানান।
-
-এই নির্দেশনা program-এর policy বা আইনগত পরামর্শের বিকল্প নয়। OnionHost দিয়ে
-যে কনটেন্ট host বা share করা হয় তার দায় ব্যবহারকারীর।
 
 ## License
 
